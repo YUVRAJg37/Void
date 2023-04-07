@@ -3,25 +3,36 @@
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
 
 AMechBall::AMechBall() :
-CapsuleHalfHeightInMechForm(56.0f),
-CapsuleHalfHeightInBallForm(36.0f),
+MechCapsuleHalfHeight(56.0f),
+BallCapsuleHalfHeight(36.0f),
 MechBallState(EMechBallState::MBS_Ball),
-bSwitchBody(false)
+bSwitchBody(false),
+MovementSpeed(20.0f),
+ForceValue(30.0f),
+StabilizeForceValue(1.0f)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	CapsuleComponent = CreateDefaultSubobject<UCapsuleComponent>("Capsule");
+	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>("Mesh");
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>("Camera Boom");
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>("Follow Camera");
+	MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>("Movement Component");
 
+	RootComponent = CapsuleComponent;
+	Mesh->SetupAttachment(CapsuleComponent);
 	CameraBoom->SetupAttachment(GetRootComponent());
 	FollowCamera->SetupAttachment(CameraBoom);
 	
 	CameraBoom->bUsePawnControlRotation = true;
 
-	GetCapsuleComponent()->SetSimulatePhysics(false);
+	CapsuleComponent->SetSimulatePhysics(true);
+	CapsuleComponent->SetCapsuleHalfHeight(36.0f);
+	CapsuleComponent->SetCapsuleRadius(36.0f);
 	
 }
 
@@ -84,41 +95,93 @@ void AMechBall::Move(const FInputActionValue& Value)
 
 void AMechBall::BallMovement(const FVector2D& InputDirection)
 {
+	const FVector forceValue = ConvertToWorldDirection(InputDirection)*ForceValue;
+	float dot = CalculateDirectionalForceEffect(ConvertToWorldDirection(InputDirection)*ForceValue);
+	const FVector stabilizeForceValue = dot*forceValue*StabilizeForceValue;
+	
+	CapsuleComponent->AddTorqueInRadians(FVector{-InputDirection.Y*ForceValue, -InputDirection.X*ForceValue, 0}, NAME_None, true);
+	CapsuleComponent->AddForce(stabilizeForceValue, NAME_None, true);
+
+	if(GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(1, -1, FColor::Red,FString::Printf(TEXT("Dot : %f"), dot));
+		GEngine->AddOnScreenDebugMessage(2, -1, FColor::Red,FString::Printf(TEXT("Force : %s"), *stabilizeForceValue.ToString()));
+		GEngine->AddOnScreenDebugMessage(3, -1, FColor::Red,FString::Printf(TEXT("Torque : %s"), *forceValue.ToString()));
+	}
 }
 
 void AMechBall::MechMovement(const FVector2D& InputDirection)
 {
+	AddMovementInput(ConvertToWorldDirection(InputDirection)*MovementSpeed, 1, true);
+}
+
+float AMechBall::CalculateDirectionalForceEffect(FVector Direction)
+{
+	Direction.Normalize();
+	FVector normalizedVelocity = GetVelocity();
+	normalizedVelocity.Normalize();
+
+	Direction.Z = 0;
+	normalizedVelocity.Z = 0;
+
+	float dot = FVector::DotProduct(normalizedVelocity, Direction);
+
+	//Comverting from -1 to 1 => 0 to 1
+	dot*=0.5;
+	dot+=0.5;
+	dot = 1 - dot;
+
+	return dot;
+}
+
+FVector AMechBall::ConvertToWorldDirection(FVector2D Direction)
+{
+	FVector worldDirection = {-Direction.X, Direction.Y, 0};
+	return worldDirection;
 }
 
 void AMechBall::Switch()
 {
 	bSwitchBody = true;
 	
-	if(MechBallState == EMechBallState::MBS_Mech)
-			TargetHalfHeight = CapsuleHalfHeightInBallForm;
-	if(MechBallState == EMechBallState::MBS_Ball)
-			TargetHalfHeight = CapsuleHalfHeightInMechForm;
+	switch (MechBallState)
+	{
+	case EMechBallState::MBS_Mech :
+		{
+			CapsuleComponent->SetSimulatePhysics(true);
+			TargetHalfHeight = BallCapsuleHalfHeight;
+			break;
+		}
+	case EMechBallState::MBS_Ball :
+		{
+			CapsuleComponent->SetSimulatePhysics(false);
+			TargetHalfHeight = MechCapsuleHalfHeight;
+			break;
+		}
+	default :
+		{
+			UE_LOG(LogTemp, Warning, TEXT("!!!!!!!!!!!!!!!!!!!"));
+		}
+	}
 	
 	MechBallState = EMechBallState::MBS_Transform;
 }
 
 void AMechBall::TransformBody(float DeltaTime)
 {
-	float interpHalfHeight = FMath::FInterpTo(GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), TargetHalfHeight, DeltaTime, 5.0f);
-	float deltaCapusleHeight = interpHalfHeight - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	float interpHalfHeight = FMath::FInterpTo(CapsuleComponent->GetScaledCapsuleHalfHeight(), TargetHalfHeight, DeltaTime, 5.0f);
+	float deltaCapusleHeight = interpHalfHeight - CapsuleComponent->GetScaledCapsuleHalfHeight();
 	FVector meshOffset = {0,0,-deltaCapusleHeight};
 	
-	GetMesh()->AddLocalOffset(meshOffset);
-	GetCapsuleComponent()->SetCapsuleHalfHeight(interpHalfHeight);
+	Mesh->AddLocalOffset(meshOffset);
+	CapsuleComponent->SetCapsuleHalfHeight(interpHalfHeight);
 
 	if(interpHalfHeight == TargetHalfHeight)
 	{
 		bSwitchBody = false;
-		if(TargetHalfHeight == CapsuleHalfHeightInBallForm)
+		if(TargetHalfHeight == BallCapsuleHalfHeight)
 			MechBallState = EMechBallState::MBS_Ball;
 		else
 			MechBallState = EMechBallState::MBS_Mech;
 	}
-
-	//UE_LOG(LogTemp, Warning, TEXT("Target : %f"), TargetHalfHeight);
 }
