@@ -52,11 +52,13 @@ private:
 	EMechBallState MechBallState;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (AllowPrivateAccess = true))
-	float MovementSpeed;
+	float MechSpeed;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (AllowPrivateAccess = true))
-	float ForceValue;
+	float BallSpeed;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (AllowPrivateAccess = true))
-	float StabilizeForceValue;
+	float TurningHelpForceValue;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (AllowPrivateAccess = true))
+	float TransformSpeed;
 	
 protected:
 
@@ -66,7 +68,7 @@ protected:
 	void BallMovement(const FVector2D& InputDirection);
 	void MechMovement(const FVector2D& InputDirection);
 	FVector ConvertToWorldDirection(FVector2D Direction);
-	float CalculateDirectionalForceEffect(FVector Direction);
+	float CalculateTurningHelpForceImpact(FVector Direction);
 	
 	void TransformBody(float DeltaTime);
 	

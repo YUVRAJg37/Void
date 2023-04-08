@@ -11,9 +11,10 @@ MechCapsuleHalfHeight(56.0f),
 BallCapsuleHalfHeight(36.0f),
 MechBallState(EMechBallState::MBS_Ball),
 bSwitchBody(false),
-MovementSpeed(20.0f),
-ForceValue(30.0f),
-StabilizeForceValue(1.0f)
+MechSpeed(20.0f),
+BallSpeed(30.0f),
+TurningHelpForceValue(1.0f),
+TransformSpeed(20.0f)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -95,27 +96,20 @@ void AMechBall::Move(const FInputActionValue& Value)
 
 void AMechBall::BallMovement(const FVector2D& InputDirection)
 {
-	const FVector forceValue = ConvertToWorldDirection(InputDirection)*ForceValue;
-	float dot = CalculateDirectionalForceEffect(ConvertToWorldDirection(InputDirection)*ForceValue);
-	const FVector stabilizeForceValue = dot*forceValue*StabilizeForceValue;
+	const FVector forceValue = ConvertToWorldDirection(InputDirection)*BallSpeed;
+	float dot = CalculateTurningHelpForceImpact(ConvertToWorldDirection(InputDirection));
+	const FVector stabilizeForceValue = dot*forceValue*TurningHelpForceValue;
 	
-	CapsuleComponent->AddTorqueInRadians(FVector{-InputDirection.Y*ForceValue, -InputDirection.X*ForceValue, 0}, NAME_None, true);
+	CapsuleComponent->AddTorqueInRadians({-forceValue.Y, forceValue.X, 0}, NAME_None, true);
 	CapsuleComponent->AddForce(stabilizeForceValue, NAME_None, true);
-
-	if(GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(1, -1, FColor::Red,FString::Printf(TEXT("Dot : %f"), dot));
-		GEngine->AddOnScreenDebugMessage(2, -1, FColor::Red,FString::Printf(TEXT("Force : %s"), *stabilizeForceValue.ToString()));
-		GEngine->AddOnScreenDebugMessage(3, -1, FColor::Red,FString::Printf(TEXT("Torque : %s"), *forceValue.ToString()));
-	}
 }
 
 void AMechBall::MechMovement(const FVector2D& InputDirection)
 {
-	AddMovementInput(ConvertToWorldDirection(InputDirection)*MovementSpeed, 1, true);
+	AddMovementInput(ConvertToWorldDirection(InputDirection)*MechSpeed, 1, true);
 }
 
-float AMechBall::CalculateDirectionalForceEffect(FVector Direction)
+float AMechBall::CalculateTurningHelpForceImpact(FVector Direction)
 {
 	Direction.Normalize();
 	FVector normalizedVelocity = GetVelocity();
@@ -136,7 +130,7 @@ float AMechBall::CalculateDirectionalForceEffect(FVector Direction)
 
 FVector AMechBall::ConvertToWorldDirection(FVector2D Direction)
 {
-	FVector worldDirection = {-Direction.X, Direction.Y, 0};
+	const FVector worldDirection = {-Direction.X, Direction.Y, 0};
 	return worldDirection;
 }
 
@@ -169,13 +163,16 @@ void AMechBall::Switch()
 
 void AMechBall::TransformBody(float DeltaTime)
 {
-	float interpHalfHeight = FMath::FInterpTo(CapsuleComponent->GetScaledCapsuleHalfHeight(), TargetHalfHeight, DeltaTime, 5.0f);
+	float interpHalfHeight = FMath::FInterpTo(CapsuleComponent->GetScaledCapsuleHalfHeight(), TargetHalfHeight, DeltaTime, TransformSpeed);
+	FRotator interpRotation = FMath::RInterpTo(CapsuleComponent->GetComponentRotation(), FRotator{0,0,0}, DeltaTime, TransformSpeed);
+	
 	float deltaCapusleHeight = interpHalfHeight - CapsuleComponent->GetScaledCapsuleHalfHeight();
 	FVector meshOffset = {0,0,-deltaCapusleHeight};
 	
 	Mesh->AddLocalOffset(meshOffset);
 	CapsuleComponent->SetCapsuleHalfHeight(interpHalfHeight);
-
+	CapsuleComponent->SetWorldRotation(interpRotation);
+	
 	if(interpHalfHeight == TargetHalfHeight)
 	{
 		bSwitchBody = false;
