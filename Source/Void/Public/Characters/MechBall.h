@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "MechBall.generated.h"
 
+class AGun;
 struct FInputActionValue;
 UENUM()
 enum class EMechBallState : uint8
@@ -38,6 +39,8 @@ private:
 	class USpringArmComponent* CameraBoom;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = true))
 	class UCameraComponent* FollowCamera;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = true))
+	USceneComponent* GunSocket;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = true))
 	class UFloatingPawnMovement* MovementComponent;
 		
@@ -59,6 +62,12 @@ private:
 	float TurningHelpForceValue;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (AllowPrivateAccess = true))
 	float TransformSpeed;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (AllowPrivateAccess = true))
+	TSubclassOf<AGun> DefaultGunClass;
+	UPROPERTY()
+	AGun* EquippedGun;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mouse", meta = (AllowPrivateAccess = true))
+	float MouseTraceRange;
 	
 protected:
 
@@ -72,8 +81,15 @@ protected:
 	
 	void TransformBody(float DeltaTime);
 	
+	void EquipGun(AGun* Gun);
+	AGun* SpawnDefaultGun();
+
+	FVector GetMouseHitLocation();
+	void RotateGunToFollowMouse();
+	
 private:
 
+	APlayerController* PlayerController;
 	float BallCapsuleHalfHeight;
 	float MechCapsuleHalfHeight;
 	float TargetHalfHeight;

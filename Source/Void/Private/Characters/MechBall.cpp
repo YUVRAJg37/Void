@@ -5,6 +5,8 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Weapons/Gun/Gun.h"
 
 AMechBall::AMechBall() :
 MechCapsuleHalfHeight(56.0f),
@@ -14,7 +16,8 @@ bSwitchBody(false),
 MechSpeed(20.0f),
 BallSpeed(30.0f),
 TurningHelpForceValue(1.0f),
-TransformSpeed(20.0f)
+TransformSpeed(20.0f),
+MouseTraceRange(5000.0f)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -23,31 +26,37 @@ TransformSpeed(20.0f)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>("Camera Boom");
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>("Follow Camera");
 	MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>("Movement Component");
+	GunSocket = CreateDefaultSubobject<USceneComponent>("Gun Socket");
 
 	RootComponent = CapsuleComponent;
 	Mesh->SetupAttachment(CapsuleComponent);
 	CameraBoom->SetupAttachment(GetRootComponent());
 	FollowCamera->SetupAttachment(CameraBoom);
+	GunSocket->SetupAttachment(GetRootComponent());
 	
 	CameraBoom->bUsePawnControlRotation = true;
 
 	CapsuleComponent->SetSimulatePhysics(true);
 	CapsuleComponent->SetCapsuleHalfHeight(36.0f);
 	CapsuleComponent->SetCapsuleRadius(36.0f);
-	
+
+	GunSocket->SetWorldLocation(GetRootComponent()->GetComponentLocation());
+	GunSocket->SetAbsolute(false, true, false);
 }
 
 void AMechBall::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	EquipGun(SpawnDefaultGun());
 }
 
 void AMechBall::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if(APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	PlayerController = Cast<APlayerController>(Controller);
+	if(PlayerController)
 	{
 		if(UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
 		{
@@ -57,6 +66,9 @@ void AMechBall::Tick(float DeltaTime)
 
 	if(bSwitchBody)
 		TransformBody(DeltaTime);
+	
+	if(MechBallState == EMechBallState::MBS_Mech)
+		RotateGunToFollowMouse();
 }
 
 void AMechBall::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -120,7 +132,7 @@ float AMechBall::CalculateTurningHelpForceImpact(FVector Direction)
 
 	float dot = FVector::DotProduct(normalizedVelocity, Direction);
 
-	//Comverting from -1 to 1 => 0 to 1
+	//Converting from -1 to 1 => 0 to 1
 	dot*=0.5;
 	dot+=0.5;
 	dot = 1 - dot;
@@ -181,4 +193,59 @@ void AMechBall::TransformBody(float DeltaTime)
 		else
 			MechBallState = EMechBallState::MBS_Mech;
 	}
+}
+
+void AMechBall::EquipGun(AGun* Gun)
+{
+	if(Gun)
+	{
+		FAttachmentTransformRules AttachmentTransformRules(EAttachmentRule::KeepWorld, false);
+		AttachmentTransformRules.LocationRule = EAttachmentRule::SnapToTarget;
+		
+		Gun->AttachToComponent(GunSocket, AttachmentTransformRules);
+	}
+}
+
+AGun* AMechBall::SpawnDefaultGun()
+{
+	if(DefaultGunClass)
+	{
+		FActorSpawnParameters spawnParameters;
+		spawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		FVector location = GetActorLocation();
+		FRotator rotation = GetActorRotation();
+		
+		return GetWorld()->SpawnActor<AGun>(DefaultGunClass, location, rotation, spawnParameters);
+	}
+	return nullptr;
+}
+
+FVector AMechBall::GetMouseHitLocation()
+{
+	if(!PlayerController)
+		return FVector(0);
+
+	FVector mouseLocation, mouseDirection;
+	FHitResult hitResult;
+	
+	PlayerController->DeprojectMousePositionToWorld(mouseLocation, mouseDirection);
+	GetWorld()->LineTraceSingleByChannel(hitResult, mouseLocation, mouseLocation + mouseDirection*MouseTraceRange, ECC_Visibility);
+	
+	if(hitResult.bBlockingHit)
+	{
+		return hitResult.ImpactPoint;
+	}
+
+	return FVector(0);
+}
+
+void AMechBall::RotateGunToFollowMouse()
+{
+	FVector mouseLocation = GetMouseHitLocation();
+	FVector gunLocation = GunSocket->GetComponentLocation();
+	FRotator gunRotation = UKismetMathLibrary::FindLookAtRotation(gunLocation, mouseLocation);
+	gunRotation.Pitch = 0;
+
+	GunSocket->SetWorldRotation(gunRotation);
 }
